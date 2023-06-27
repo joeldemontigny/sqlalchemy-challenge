@@ -1,5 +1,6 @@
 # Import the dependencies.
 import numpy as np
+import pandas as pd
 import datetime as dt
 
 import sqlalchemy
@@ -24,9 +25,6 @@ base.prepare(autoload_with=engine)
 # Save references to each table
 measurement = base.classes.measurement
 station = base.classes.station
-
-# Create our session (link) from Python to the DB
-session = Session(engine)
 
 #################################################
 # Flask Setup
@@ -58,21 +56,24 @@ def precipitation():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of the last 12 monrhs precipitation data"""
-    # Query last 12 months and precipitation
+    # Find latest date
     recent_data = session.query(measurement.date).order_by(measurement.date.desc()).first()
+    # Query last 12 months and precipitation
+    
     yearago = (dt.date(2017,8,23)) - (dt.timedelta(days=365))
-    results = session.query(measurement.date, measurement.prcp).filter(measurement.date >= yearago).all()
+    results = session.query(measurement.date, measurement.prcp).\
+        filter(measurement.date >= yearago).all()
 
+    # Close session
     session.close()
 
     # Create a dictionary from the row data and append to a list of data_prcp
     data_prcp = []
     for date, prcp in results:
-        date_prcp_dict = {}
-        date_prcp_dict["date"] = date
-        date_prcp_dict["prcp"] = prcp
-        data_prcp.append(date_prcp_dict)
+        prcp_dict = {}
+        prcp_dict["date"] = date
+        prcp_dict["prcp"] = prcp
+        data_prcp.append(prcp_dict)
 
     return jsonify(data_prcp)
 
@@ -90,9 +91,9 @@ def stations():
     
     # Create a dictionary from the row data and append to list station_data
     station_data = []
-    for name, station, elevation, latitude, longitude in stations:
+    for station, name, latitude, longitude, elevation in stations:
         station_dict = {}
-        station_dict["station id"] = station
+        station_dict["station"] = station
         station_dict["name"] = name        
         station_dict["latitude"] = latitude
         station_dict["longitude"] = longitude
@@ -119,9 +120,10 @@ def tobs():
     
     # Create a dictionary from the row data and append to list most_active
     most_active = []
-    for date, temp in active_station:
+    for date, tobs in active_station:
         active_dict = {}
-        active_dict[date] = temp
+        active_dict["date"] = date
+        active_dict["temperature"] = tobs
         most_active.append(active_dict)
         
     return jsonify(most_active)
@@ -134,7 +136,7 @@ def start(start):
     
     # Preform a query to retrieve the minimum, maximum, and average temperature for a specified start date to the end of the dataset
     query_results = session.query(func.min(measurement.tobs), func.max(measurement.tobs), func.avg(measurement.tobs)).\
-            filter(measurement.date >= start).all()
+            filter(measurement.date >= start).filter(measurement.date <= end).order_by (measurement.date).all()
     
     # Close Session                                                  
     session.close()
@@ -157,9 +159,8 @@ def range_date(start,end):
     session = Session(engine)
     
    # Using the most active station id from the previous query, calculate the lowest, highest, and average temperature.
-    session.query(measurement.station, func.min(measurement.tobs),\
-            func.max(measurement.tobs), func.avg(measurement.tobs)).\
-            filter(measurement.station== 'USC00519281').all()
+    range_summary = session.query(func.min(measurement.tobs), func.max(measurement.tobs),\
+                                  func.avg(measurement.tobs)).filter(measurement.date.between(start, end)).all()
     
     # Close Session                                                  
     session.close()
